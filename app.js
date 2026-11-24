@@ -58,10 +58,34 @@ let demo=demoDefault();
 function loadDemo(){try{demo={...demoDefault(),...JSON.parse(localStorage.getItem(KEYPREVIEW)||'{}')};demo.preferences={...DEFAULT_PREFS,...(demo.preferences||{})};}catch{demo=demoDefault();}}
 function saveDemo(){if(preview){try{localStorage.setItem(KEYPREVIEW,JSON.stringify(demo));}catch{toast('Unable to save preview data in this browser.');}}}
 async function rpc(name,args){const {data,error}=await db.rpc(name,args||{});if(error)throw new Error(error.message);return data;}
-function setAuthView(mode){authMode=mode;const signup=mode==='signup';$('signupExtra').hidden=!signup;$('identity').hidden=signup;$('identity').required=!signup;$('signupUsername').required=signup;$('signupEmail').required=signup;document.querySelector('label[for="identity"]').hidden=signup;$('loginTab').classList.toggle('active',!signup);$('signupTab').classList.toggle('active',signup);$('authTitle').textContent=signup?'Start your journey':'Welcome back';$('authDesc').textContent=signup?'Create your free study account.':'Log in to continue your study journey.';$('authSubmit').textContent=signup?'Create free account ♡':'Log in ♡';$('resetPassword').hidden=signup;$('authError').textContent='';}
+function setAuthView(mode){
+ authMode=mode;
+ const signup=mode==='signup',recovery=mode==='recovery';
+ $('signupExtra').hidden=!signup;
+ $('identity').hidden=signup||recovery;
+ $('identity').required=!signup&&!recovery;
+ $('signupUsername').required=signup;$('signupEmail').required=signup;
+ document.querySelector('label[for="identity"]').hidden=signup||recovery;
+ document.querySelector('.auth-tabs').hidden=recovery;
+ document.querySelector('label[for="password"]').textContent=recovery?'New password':'Password';
+ $('password').autocomplete=signup||recovery?'new-password':'current-password';
+ $('password').value='';$('password').placeholder='At least 8 characters';
+ $('loginTab').classList.toggle('active',!signup&&!recovery);
+ $('signupTab').classList.toggle('active',signup);
+ $('authTitle').textContent=recovery?'Choose a new password':signup?'Start your journey':'Welcome back';
+ $('authDesc').textContent=recovery?'Enter a new password for your account.':signup?'Create your free study account.':'Log in to continue your study journey.';
+ $('authSubmit').textContent=recovery?'Update password ♡':signup?'Create free account ♡':'Log in ♡';
+ $('resetPassword').hidden=signup||recovery;
+ $('authError').textContent='';
+}
 function setAuthError(msg){$('authError').textContent=msg||'';}
 async function signIn(event){event.preventDefault();const submit=$('authSubmit');submit.disabled=true;setAuthError('');try{
- if(authMode==='signup'){
+ if(authMode==='recovery'){
+  const password=$('password').value;
+  if(password.length<8)throw Error('Choose at least 8 password characters.');
+  const {error}=await db.auth.updateUser({password});if(error)throw error;
+  await db.auth.signOut();setAuthView('login');setAuthError('Your password has been updated. You can now sign in.');
+ }else if(authMode==='signup'){
   const username=$('signupUsername').value.trim().toLowerCase(),email=$('signupEmail').value.trim().toLowerCase(),password=$('password').value;
   if(!/^[a-z0-9_]{3,24}$/.test(username))throw Error('Username: 3–24 lowercase letters, numbers or underscores.');
   if(password.length<8)throw Error('Choose at least 8 password characters.');
@@ -105,11 +129,21 @@ async function init(){
  $('gameFree').onclick=()=>adminAction('game_free',null,$('adminGame').value);
  $('reloadAdminUsers').onclick=loadAdminUsers;
  renderThemes();renderGameCards();renderTimer();
- if(!configured){$('cloudAuth').hidden=true;$('demoEntry').hidden=backendConfigured||!cfg.ALLOW_LOCAL_PREVIEW;setAuthError(backendConfigured?'Could not load the Supabase library. Check your connection or CDN settings.':cfg.ALLOW_LOCAL_PREVIEW?'':'Set Supabase URL/key in config.js to run this app.');return;}
+ if(!configured){
+  $('cloudAuth').hidden=true;$('demoEntry').hidden=!cfg.ALLOW_LOCAL_PREVIEW;
+  setAuthError(backendConfigured?'Could not load the Supabase library. Check your connection or CDN settings.':cfg.ALLOW_LOCAL_PREVIEW?'':'Set Supabase URL/key in config.js to enable cloud accounts.');
+  return;
+ }
  db=window.supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+ db.auth.onAuthStateChange((event,next)=>{
+  if(event==='SIGNED_OUT')showLogin();
+  if(event==='PASSWORD_RECOVERY'){
+   session=next;$('authGate').hidden=false;$('appRoot').hidden=true;
+   setAuthView('recovery');setAuthError('Recovery link verified. Choose a new password below.');
+  }
+ });
  const {data,error}=await db.auth.getSession();if(error){setAuthError(error.message);return;}
- if(data.session){session=data.session;await enterApp();}
- db.auth.onAuthStateChange(async (event,next)=>{if(event==='SIGNED_OUT'){showLogin();}if(event==='PASSWORD_RECOVERY'){setAuthError('Recovery link opened. Sign in using your new password after updating it in Supabase Auth.');}});
+ if(data.session&&authMode!=='recovery'){session=data.session;await enterApp();}
 }
 async function enterApp(){try{
  if(!preview){const {data,error}=await db.auth.getSession();if(error||!data.session)throw Error('Please log in.');session=data.session;const {data:profile,error:pe}=await db.from('profiles').select('*').eq('user_id',session.user.id).single();if(pe)throw pe;state.profile=profile;const {data:pref}=await db.from('preferences').select('settings').eq('user_id',session.user.id).maybeSingle();state.preferences={...DEFAULT_PREFS,...(pref?.settings||{})};}
@@ -120,20 +154,21 @@ async function enterApp(){try{
  await Promise.all([loadTasks(),loadShelf(),loadInsights(),refreshSnapshot(),loadLeaderboard()]);
  renderProfile();renderGameCards();if(!preview&&state.profile.is_admin)loadAdminUsers();
  if(!preview){await recoverRun();await heartBeat();polling=setInterval(()=>{heartBeat();refreshSnapshot();if(currentPage==='study'&&++pollCount%2===0)loadLeaderboard();},30000);}
-}catch(e){console.error(e);toast(e.message||'Could not load account');if(!preview){$('authGate').hidden=false;$('appRoot').hidden=true;}}}
+}catch(e){console.error(e);toast(e.message||'Could not load account');if(!preview){$('authGate').hidden=false;$('appRoot').hidden=true;setAuthError(e.message||'Could not load account');}}}
 function showLogin(){stopIntervals();preview=false;session=null;state.profile=null;$('authGate').hidden=false;$('appRoot').hidden=true;setAuthView('login');}
 async function logout(){if(timer.running)await pauseTimer();if(timer.serverRunOpen&&!preview){try{await rpc('tick_study',{p_action:'stop'});}catch{}}stopIntervals();if(!preview)await db.auth.signOut();showLogin();}
 function stopIntervals(){if(timer.ticker)clearInterval(timer.ticker);if(timer.pulser)clearInterval(timer.pulser);if(polling)clearInterval(polling);timer.ticker=timer.pulser=polling=null;timer.running=false;}
-function navigate(section){if(!['study','todoSection','games','playlists','profile'].includes(section))return;currentPage=section;document.querySelectorAll('.section').forEach(s=>s.classList.toggle('active',s.id===section));document.querySelectorAll('.nav-item').forEach(b=>b.classList.toggle('active',b.dataset.nav===section));scrollTo({top:0,behavior:'instant'});if(section==='profile')renderProfile();if(section==='games')renderGameCards();}
+function navigate(section){if(!['study','todoSection','games','playlists','profile'].includes(section))return;currentPage=section;document.querySelectorAll('.section').forEach(s=>s.classList.toggle('active',s.id===section));document.querySelectorAll('.nav-item').forEach(b=>b.classList.toggle('active',b.dataset.nav===section));window.scrollTo({top:0,behavior:'auto'});if(section==='profile')renderProfile();if(section==='games')renderGameCards();}
 function openModal(id){$(id).hidden=false;if(id==='themeModal')renderThemes();}
 function closeModal(id){$(id).hidden=true;if(id==='gameModal'){state.activeGame=null;state.room=null;window.GazelleGames?.close?.();if(!preview)rpc('game_leave').catch(()=>{});}}
 function settingValues(){return {focus:Number($('focusMinutes').value),short:Number($('shortMinutes').value),long:Number($('longMinutes').value),rounds:Number($('rounds').value),autoBreak:$('autoBreak').checked};}
 function renderSettings(){const p=state.preferences;for(const [k,id] of [['focus','focusMinutes'],['short','shortMinutes'],['long','longMinutes'],['rounds','rounds']])$(id).value=p[k];$('autoBreak').checked=!!p.autoBreak;}
 async function saveTimerSettings(){const p=settingValues();if(!Number.isInteger(p.focus)||p.focus<1||p.focus>180||!Number.isInteger(p.short)||p.short<1||p.short>60||!Number.isInteger(p.long)||p.long<1||p.long>90||!Number.isInteger(p.rounds)||p.rounds<2||p.rounds>12){toast('Check the duration limits.');return;}
- try{await stopCurrentRun();state.preferences={...state.preferences,...p};await persistPreferences();timer.remaining=Number(p[timer.phase==='focus'?'focus':timer.phase==='short'?'short':'long'])*60;renderTimer();closeModal('settingsModal');toast('Pomodoro settings saved ♡');}catch(e){toast(e.message);}}
+ const previous={...state.preferences},previousRemaining=timer.remaining;
+ try{await stopCurrentRun();state.preferences={...state.preferences,...p};await persistPreferences();timer.remaining=Number(p[timer.phase==='focus'?'focus':timer.phase==='short'?'short':'long'])*60;renderTimer();closeModal('settingsModal');toast('Pomodoro settings saved ♡');}catch(e){state.preferences=previous;timer.remaining=previousRemaining;renderSettings();renderTimer();toast(e.message);}}
 async function persistPreferences(){if(preview){demo.preferences={...state.preferences};saveDemo();return;}await rpc('save_my_preferences',{p_settings:state.preferences});}
 function premium(){return state.profile && (state.profile.plan==='premium'||state.profile.is_admin);}
-function renderThemes(){const grid=$('themeGrid');grid.replaceChildren();THEMES.forEach(t=>{const locked=!!(t.premium&&!premium());const b=$node('button','theme-choice'+(t.name===state.preferences.theme?' current':''),t.name+(locked?' ✦':''));b.type='button';b.title=locked?'Premium only':t.name;const pips=$node('span','theme-pips');t.colors.forEach(c=>{const i=document.createElement('i');i.style.background=c;pips.append(i);});b.prepend(pips);b.onclick=()=>selectTheme(t);grid.append(b);});document.querySelectorAll('[data-shape]').forEach(b=>b.classList.toggle('active',b.dataset.shape===state.preferences.shape));document.querySelectorAll('[data-shape]').forEach(b=>b.onclick=async()=>{state.preferences.shape=b.dataset.shape;applyTheme();try{await persistPreferences();}catch(e){toast(e.message);}renderThemes();});}
+function renderThemes(){const grid=$('themeGrid');grid.replaceChildren();THEMES.forEach(t=>{const locked=!!(t.premium&&!premium());const b=$node('button','theme-choice'+(t.name===state.preferences.theme?' current':''),t.name+(locked?' ✦':''));b.type='button';b.title=locked?'Premium only':t.name;const pips=$node('span','theme-pips');t.colors.forEach(c=>{const i=document.createElement('i');i.style.background=c;pips.append(i);});b.prepend(pips);b.onclick=()=>selectTheme(t);grid.append(b);});document.querySelectorAll('[data-shape]').forEach(b=>b.classList.toggle('active',b.dataset.shape===state.preferences.shape));document.querySelectorAll('[data-shape]').forEach(b=>b.onclick=async()=>{const previous=state.preferences.shape;state.preferences.shape=b.dataset.shape;applyTheme();try{await persistPreferences();}catch(e){state.preferences.shape=previous;applyTheme();toast(e.message);}renderThemes();});}
 async function selectTheme(t){if(t.premium&&!premium()){toast('This palette is a Premium theme ♡');return;}const previous=state.preferences.theme;state.preferences.theme=t.name;applyTheme();try{await persistPreferences();renderThemes();toast(t.name+' applied ♡');}catch(e){state.preferences.theme=previous;applyTheme();toast(e.message);}}
 function applyTheme(){const p=THEMES.find(t=>t.name===state.preferences.theme)||THEMES[2];const root=document.documentElement;const c=p.colors;
  root.style.setProperty('--bg',p.bg);root.style.setProperty('--accent',p.accent);root.style.setProperty('--second',p.secondary);root.style.setProperty('--gradA',p.name==='Buttercream'?'#FFF1B5':lighten(c[0],0.4));root.style.setProperty('--gradB',c[0]);root.style.setProperty('--gradC',darken(c[0],0.11));
@@ -151,33 +186,58 @@ function renderTimer(){const n=timer.running?Math.max(0,Math.ceil((timer.deadlin
  $('togetherStatus').textContent=state.snapshot?.room_open?'Host room is open ♡':'Waiting for host to open the room';
 }
 async function setStudyMode(next){if(!['solo','together'].includes(next))return;if(next==='together'){if(!premium()){toast('Study Together is a Premium feature.');return;}if(!state.snapshot?.room_open){toast('The host has not opened a study room yet.');return;}}
- if(timer.studyMode===next)return;await stopCurrentRun();timer.studyMode=next;timer.remaining=Number(state.preferences.focus)*60;timer.phase='focus';state.roomJoined=next==='solo';renderTimer();}
+ if(timer.studyMode===next)return;try{await stopCurrentRun();timer.studyMode=next;timer.remaining=Number(state.preferences.focus)*60;timer.phase='focus';state.roomJoined=next==='solo';renderTimer();}catch(e){toast('Could not switch study mode: '+e.message);}}
 async function joinTogether(){if(!premium()||!state.snapshot?.room_open){toast('The room needs Premium access and an active host.');return;}state.roomJoined=true;renderTimer();toast('Joined the host study room ♡');}
 function stopLocalClock(){timer.running=false;if(timer.ticker)clearInterval(timer.ticker);if(timer.pulser)clearInterval(timer.pulser);timer.ticker=timer.pulser=null;}
-async function stopCurrentRun(){if(timer.running)await pauseTimer();if(timer.serverRunOpen&&!preview){try{await rpc('tick_study',{p_action:'stop'});}catch(e){toast(e.message);}timer.serverRunOpen=false;}timer.running=false;timer.remaining=Number(state.preferences.focus)*60;}
-async function switchPhase(phase){if(timer.running)await pauseTimer();if(timer.phase==='focus'&&phase!=='focus'&&timer.serverRunOpen){await stopCurrentRun();}timer.phase=phase;timer.remaining=Number(state.preferences[phase==='focus'?'focus':phase==='short'?'short':'long'])*60;timer.serverRunOpen=false;renderTimer();}
+async function stopCurrentRun(){if(timer.running)await pauseTimer();if(timer.serverRunOpen&&!preview){await rpc('tick_study',{p_action:'stop'});timer.serverRunOpen=false;}timer.running=false;timer.remaining=Number(state.preferences.focus)*60;}
+async function switchPhase(phase){try{if(timer.running)await pauseTimer();if(timer.phase==='focus'&&phase!=='focus'&&timer.serverRunOpen){await stopCurrentRun();}timer.phase=phase;timer.remaining=Number(state.preferences[phase==='focus'?'focus':phase==='short'?'short':'long'])*60;renderTimer();}catch(e){toast('Could not switch timer mode: '+e.message);}}
 async function toggleTimer(){if(timer.busy||timer.ending)return;timer.busy=true;try{if(timer.running)await pauseTimer();else await startTimer();}catch(e){toast(e.message||'Timer error');}finally{timer.busy=false;renderTimer();}}
 async function startTimer(){if(timer.phase==='focus'){
  if(timer.studyMode==='together'&&(!premium()||!state.snapshot?.room_open||!state.roomJoined)){throw Error('Join an open Premium host room first.');}
- if(!preview){if(!timer.serverRunOpen){await rpc('start_study',{p_mode:timer.studyMode,p_target_seconds:Math.max(60,Math.round(timer.remaining))});timer.serverRunOpen=true;}else await rpc('tick_study',{p_action:'resume'});}
+ if(!preview){
+  if(!timer.serverRunOpen){
+   const started=await rpc('start_study',{p_mode:timer.studyMode,p_target_seconds:Math.max(60,Math.round(timer.remaining))});
+   timer.serverRunOpen=true;
+   if(Number(started?.seconds)>0&&Number.isFinite(Number(started?.target_seconds)))timer.remaining=Math.max(0,Math.ceil(Number(started.target_seconds)-Number(started.seconds)));
+   if(started?.active===false){const resumed=await rpc('tick_study',{p_action:'resume'});if(resumed?.status==='missing'||resumed?.status==='room_closed'){timer.serverRunOpen=false;throw Error('Your previous study session has ended. Press Start again to begin a new one.');}}
+  }else{
+   const resumed=await rpc('tick_study',{p_action:'resume'});
+   if(resumed?.status==='missing'||resumed?.status==='room_closed'){
+    timer.serverRunOpen=false;
+    if(timer.studyMode==='together'){timer.studyMode='solo';state.roomJoined=false;}
+    throw Error('Your previous study session has ended. Press Start again to begin a new one.');
+   }
+  }
+ }
  timer.localLast=Date.now();
 }
  timer.deadline=Date.now()+timer.remaining*1000;timer.running=true;
  timer.ticker=setInterval(tickTimer,200);if(timer.phase==='focus')timer.pulser=setInterval(pulseFocus,20000);renderTimer();
 }
 async function pauseTimer(){if(!timer.running)return;timer.remaining=Math.max(0,Math.ceil((timer.deadline-Date.now())/1000));stopLocalClock();if(timer.phase==='focus'){
- if(preview)accountLocalFocus();else if(timer.serverRunOpen){try{const r=await rpc('tick_study',{p_action:'pause'});if(r?.status==='room_closed')timer.serverRunOpen=false;await loadInsights();}catch(e){toast('Could not sync focus time: '+e.message);}}
+ if(preview)accountLocalFocus();else if(timer.serverRunOpen){try{
+  const r=await rpc('tick_study',{p_action:'pause'});
+  if(r?.status==='room_closed'||r?.status==='missing'){
+   timer.serverRunOpen=false;
+   if(timer.studyMode==='together'){timer.studyMode='solo';state.roomJoined=false;}
+   toast('The server study session has ended. Any unsynced time was not added.');
+  }else await loadInsights();
+ }catch(e){toast('Could not sync focus time: '+e.message);}}
 }renderTimer();}
-async function resetTimer(){if(timer.busy)return;timer.busy=true;try{await stopCurrentRun();timer.remaining=Number(state.preferences[timer.phase==='focus'?'focus':timer.phase==='short'?'short':'long'])*60;toast('Timer reset ♡');}finally{timer.busy=false;renderTimer();await loadInsights();}}
+async function resetTimer(){if(timer.busy)return;timer.busy=true;try{await stopCurrentRun();timer.remaining=Number(state.preferences[timer.phase==='focus'?'focus':timer.phase==='short'?'short':'long'])*60;toast('Timer reset ♡');}catch(e){toast('Could not reset timer: '+e.message);}finally{timer.busy=false;renderTimer();await loadInsights();}}
 function tickTimer(){if(!timer.running)return;const left=Math.ceil((timer.deadline-Date.now())/1000);$('timeDisplay').textContent=formatTime(Math.max(0,left));if(left<=0&&!timer.ending){timer.ending=true;completeTimer().finally(()=>{timer.ending=false;});}}
-async function completeTimer(){const original=timer.phase;stopLocalClock();timer.remaining=0;
+async function completeTimer(){const original=timer.phase;stopLocalClock();timer.remaining=0;let syncNotice='';
  if(original==='focus'){
   if(preview){accountLocalFocus();demo.runs.push({completed:true,ended_at:new Date().toISOString()});saveDemo();}
-  else if(timer.serverRunOpen){try{const res=await rpc('tick_study',{p_action:'complete'});timer.serverRunOpen=false;if(res.status==='room_closed'){toast('The host closed the study room.');}else if(!res.completed){toast('Focus time recorded, but round was not marked complete.');}}catch(e){toast('Study sync error: '+e.message);}}
+  else if(timer.serverRunOpen){try{
+   const res=await rpc('tick_study',{p_action:'complete'});timer.serverRunOpen=false;
+   if(res.status==='room_closed'||res.status==='missing'){syncNotice='The server session ended before this round could be recorded.';if(timer.studyMode==='together'){timer.studyMode='solo';state.roomJoined=false;}}
+   else if(!res.completed)syncNotice='Focus time was recorded, but the round was not marked complete.';
+  }catch(e){syncNotice='Study sync error: '+e.message;}}
   timer.completedFocus++;await loadInsights();await refreshSnapshot();await loadLeaderboard();
   timer.phase=timer.completedFocus%state.preferences.rounds===0?'long':'short';
  }else timer.phase='focus';timer.remaining=Number(state.preferences[timer.phase==='focus'?'focus':timer.phase==='short'?'short':'long'])*60;
- renderTimer();toast(original==='focus'?'Focus complete! Lovely work ♡':'Break finished — welcome back ♡');
+ renderTimer();toast(syncNotice||(original==='focus'?'Focus complete! Lovely work ♡':'Break finished — welcome back ♡'));
  if(original==='focus'&&state.preferences.autoBreak){await startTimer();}
 }
 function accountLocalFocus(){if(!timer.localLast)return;const now=Date.now();const sec=Math.max(0,(now-timer.localLast)/1000);timer.localLast=now;
@@ -191,14 +251,34 @@ function applyPulseToInsights(result){
  if(last&&last.date===utcDate(new Date()))last.seconds=Number(last.seconds||0)+ds;
  $('todayXp').textContent=xpFormat(state.insights.today_xp);renderProfile();
 }
-async function pulseFocus(){if(!timer.running||timer.phase!=='focus'||pingBusy)return;pingBusy=true;try{if(preview){accountLocalFocus();await loadInsights();}else{const res=await rpc('tick_study',{p_action:'pulse'});if(res.status==='room_closed'){stopLocalClock();timer.serverRunOpen=false;timer.studyMode='solo';state.roomJoined=false;toast('The host closed the room. Study Together has ended.');renderTimer();}else applyPulseToInsights(res);if(++pulseCount%6===0)await loadInsights();}}catch(e){console.warn('Focus heartbeat failed:',e.message);}finally{pingBusy=false;}}
-async function recoverRun(){try{const {data}=await db.from('study_runs').select('mode,target_seconds,total_seconds,is_active').is('ended_at',null).maybeSingle();if(!data)return;const s=await rpc('tick_study',{p_action:'pause'});timer.serverRunOpen=s.status!=='room_closed';timer.phase='focus';timer.studyMode=data.mode;timer.remaining=Math.max(0,Math.ceil(Number(data.target_seconds)-Number(s.seconds||data.total_seconds)));timer.running=false;state.roomJoined=data.mode==='together';renderTimer();toast('Your previous session was restored paused ♡');}catch(e){console.warn('Run recovery:',e.message);}}
+async function pulseFocus(){if(!timer.running||timer.phase!=='focus'||pingBusy)return;pingBusy=true;try{
+ if(preview){accountLocalFocus();await loadInsights();}
+ else{
+  const res=await rpc('tick_study',{p_action:'pulse'});
+  if(res?.status==='room_closed'||res?.status==='missing'){
+   timer.remaining=Math.max(0,Math.ceil((timer.deadline-Date.now())/1000));stopLocalClock();timer.serverRunOpen=false;
+   if(timer.studyMode==='together'){timer.studyMode='solo';state.roomJoined=false;}
+   toast(res.status==='room_closed'?'The host closed the room. Study Together has ended.':'The server study session has ended.');renderTimer();
+  }else if(res?.status==='paused'&&timer.running){
+   timer.remaining=Math.max(0,Math.ceil((timer.deadline-Date.now())/1000));stopLocalClock();
+   toast('Your server study session is paused. Press Start to resume.');renderTimer();
+  }else applyPulseToInsights(res);
+  if(++pulseCount%6===0)await loadInsights();
+ }
+ }catch(e){console.warn('Focus heartbeat failed:',e.message);}finally{pingBusy=false;}}
+async function recoverRun(){try{
+ const {data}=await db.from('study_runs').select('mode,target_seconds,total_seconds,is_active').is('ended_at',null).maybeSingle();if(!data)return;
+ const s=await rpc('tick_study',{p_action:'pause'});timer.serverRunOpen=!['room_closed','missing'].includes(s?.status);
+ timer.phase='focus';timer.studyMode=data.mode;timer.remaining=Math.max(0,Math.ceil(Number(data.target_seconds)-Number(s?.seconds??data.total_seconds)));timer.running=false;
+ if(!timer.serverRunOpen&&data.mode==='together'){timer.studyMode='solo';state.roomJoined=false;}else state.roomJoined=data.mode==='together';
+ renderTimer();toast(timer.serverRunOpen?'Your previous session was restored paused ♡':'Your previous study session has ended.');
+ }catch(e){console.warn('Run recovery:',e.message);}}
 async function heartBeat(){if(preview||!session)return;try{await rpc('presence_ping');if(state.activeGame)await rpc('game_ping',{p_game:state.activeGame});}catch(e){console.warn('Presence',e.message);}}
 async function refreshSnapshot(){if(preview){state.snapshot={registered:'—',online:'—',solo:'—',together:'—',break_active:!!demo.previewBreak,room_open:false,catalog:[{game:'crossword',xp_required:0,premium_only:false,players:0},{game:'sudoku',xp_required:10,premium_only:false,players:0},{game:'memory',xp_required:5,premium_only:false,players:0},{game:'jigsaw',xp_required:15,premium_only:false,players:0}]};}
  else{try{state.snapshot=await rpc('get_app_snapshot');}catch(e){console.warn('Snapshot',e.message);return;}}
  $('registeredCount').textContent=state.snapshot.registered;$('onlineCount').textContent=state.snapshot.online;
  if(preview)$('previewBreakToggle').textContent=demo.previewBreak?'Lock games again':'Try all games';
- if(!state.snapshot.room_open&&timer.studyMode==='together'&&!timer.running){state.roomJoined=false;}
+ if(!state.snapshot.room_open&&timer.studyMode==='together'&&!timer.running){state.roomJoined=false;timer.studyMode='solo';}
  $('roomToggle').textContent=state.snapshot.room_open?'Close Together room':'Open Together room';$('breakToggle').textContent=state.snapshot.break_active?'Disable Break Mode':'Enable Break Mode';
  $('breakBanner').textContent=state.snapshot.break_active?(preview?'☕ Local showcase: all four games are temporarily unlocked.':'☕ Host Break Mode is on — study XP requirements are waived!'):'Games unlock through accumulated study XP. Requirements are provisional.';
  renderTimer();renderGameCards();}
@@ -218,7 +298,11 @@ function renderTasks(){const box=$('taskRows');box.replaceChildren();const done=
  const note=$node('textarea','task-detail-input task-note');note.maxLength=2000;note.rows=2;note.placeholder='Notes, pages, ideas…';note.value=t.note||'';note.setAttribute('aria-label','Notes for '+t.title);note.onchange=()=>updateTask(t.id,{note:note.value});
  details.append(subtitle,note);detailToggle.onclick=()=>{details.hidden=!details.hidden;};inner.append(detailToggle,details);const del=$node('button','task-del','×');del.setAttribute('aria-label','Delete task');del.onclick=()=>deleteTask(t.id);row.append(cb,inner,del);box.append(row);});}
 async function loadShelf(){if(preview)state.links=demo.links||[];else{const {data,error}=await db.from('shelf_links').select('*').order('created_at',{ascending:false});if(error)throw error;state.links=data||[];}renderShelf();}
-async function addShelf(e){e.preventDefault();const title=$('shelfTitle').value.trim(),url=$('shelfUrl').value.trim();if(!/^https:\/\//i.test(url)){toast('Please use a valid HTTPS link.');return;}
+async function addShelf(e){e.preventDefault();const title=$('shelfTitle').value.trim(),rawUrl=$('shelfUrl').value.trim();let parsedUrl;
+ if(!title){toast('Please add a title for this link.');return;}
+ try{parsedUrl=new URL(rawUrl);}catch{toast('Please enter a valid HTTPS link.');return;}
+ if(parsedUrl.protocol!=='https:'){toast('Please use a valid HTTPS link.');return;}
+ const url=parsedUrl.href;
  try{if(preview){demo.links.unshift({id:makeId(),title,url});saveDemo();}else{const {error}=await db.from('shelf_links').insert({user_id:session.user.id,title,url});if(error)throw error;}
  $('shelfTitle').value='';$('shelfUrl').value='';await loadShelf();toast('Saved to your study shelf ♡');}catch(e){toast(e.message);}}
 function renderShelf(){const box=$('shelfRows');box.replaceChildren();if(!state.links.length){box.append($node('p','empty-line','Your study shelf is waiting for its first playlist.'));return;}
