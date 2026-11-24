@@ -17,8 +17,20 @@
   <h1 id="authTitle">Welcome back</h1><p class="muted auth-desc" id="authDesc">Log in to continue your study journey.</p>
   <div id="cloudAuth"><div class="auth-tabs"><button id="loginTab" class="auth-tab active" type="button">Log in</button><button id="signupTab" class="auth-tab" type="button">Create account</button></div>
    <form id="authForm"><label for="identity">Email or username</label><input id="identity" autocomplete="username" placeholder="you@example.com or username" required>
-    <div id="signupExtra" hidden><label for="signupEmail">Email address</label><input id="signupEmail" type="email" autocomplete="email" placeholder="you@example.com"><label for="signupUsername">Username</label><input id="signupUsername" maxlength="24" placeholder="your_username" autocomplete="nickname"></div>
-    <label for="password">Password</label><input id="password" type="password" minlength="8" maxlength="256" autocomplete="current-password" required placeholder="At least 8 characters"><button id="authSubmit" class="btn primary full" type="submit">Log in ♡</button>
+    <div id="signupExtra" hidden>
+    <label for="signupEmail">Email address</label><input id="signupEmail" type="email" autocomplete="email" placeholder="you@example.com">
+    <label for="signupUsername">Username</label><input id="signupUsername" maxlength="24" placeholder="your_username" autocomplete="nickname">
+    <div class="avatar-picker-label">Choose your avatar</div>
+    <div class="signup-avatar-picker" role="group" aria-label="Choose your profile avatar">
+      <button class="signup-avatar-option selected" type="button" data-signup-avatar="1" aria-pressed="true">
+        <img src="assets/avatar1.webp" alt="Avatar 1"><span>Avatar 1</span>
+      </button>
+      <button class="signup-avatar-option" type="button" data-signup-avatar="5" aria-pressed="false">
+        <img src="assets/avatar5.webp" alt="Avatar 5"><span>Avatar 5</span>
+      </button>
+    </div>
+  </div>
+    <label for="password">Password</label><input id="password" type="password" minlength="8" autocomplete="current-password" required placeholder="At least 8 characters"><button id="authSubmit" class="btn primary full" type="submit">Log in ♡</button>
    </form><button id="resetPassword" class="text-button" type="button">Forgot password?</button>
   </div>
   <div id="demoEntry" hidden><p class="muted" style="text-align:center">This copy isn't connected to Supabase yet. You can explore the app in local preview mode; online features remain disabled.</p><button id="openPreview" class="btn primary full" type="button">Explore local preview ♡</button></div>
