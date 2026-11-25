@@ -194,14 +194,7 @@ function applyTheme(){const p=THEMES.find(t=>t.name===state.preferences.theme)||
 }
 function lighten(hex,f){return blend(hex,'#ffffff',f);}function darken(hex,f){return blend(hex,'#836f66',f);}
 function blend(a,b,f){function rgb(h){h=h.replace('#','');return [0,2,4].map(i=>parseInt(h.slice(i,i+2),16));}const x=rgb(a),y=rgb(b);return '#'+x.map((v,i)=>Math.round(v*(1-f)+y[i]*f).toString(16).padStart(2,'0')).join('');}
-function renderTimer(){const target = Number(state.preferences.focus) * 60;
-const left = timer.running
-  ? Math.max(0, Math.ceil((timer.deadline - Date.now()) / 1000))
-  : timer.remaining;
-
-const n = timer.infinite
-  ? Math.max(0, target - left)
-  : left;
+function renderTimer(){const n=timer.running?Math.max(0,Math.ceil((timer.deadline-Date.now())/1000)):timer.remaining;
  $('timeDisplay').textContent=formatTime(n);
  $('modeLabel').textContent=timer.phase==='focus'?(timer.infinite?'INFINITE FOCUS':'FOCUS TIME'):timer.phase==='short'?'SHORT BREAK':'LONG BREAK';
  $('startBtn').textContent=timer.running?'PAUSE':n<(state.preferences[timer.phase==='focus'?'focus':timer.phase==='short'?'short':'long']*60)?'RESUME':'START';
@@ -254,28 +247,7 @@ async function pauseTimer(){if(!timer.running)return;timer.remaining=Math.max(0,
  }catch(e){toast('Could not sync focus time: '+e.message);}}
 }renderTimer();}
 async function resetTimer(){if(timer.busy)return;timer.busy=true;try{await stopCurrentRun();timer.remaining=Number(state.preferences[timer.phase==='focus'?'focus':timer.phase==='short'?'short':'long'])*60;toast('Timer reset ♡');}catch(e){toast('Could not reset timer: '+e.message);}finally{timer.busy=false;renderTimer();await loadInsights();}}
-function tickTimer(){
-  if(!timer.running)return;
-
-  const left=Math.ceil((timer.deadline-Date.now())/1000);
-
-  const shown=timer.infinite
-    ? Math.max(0,Number(state.preferences.focus)*60-left)
-    : Math.max(0,left);
-
-  $('timeDisplay').textContent=formatTime(shown);
-
-  if(left<=0&&!timer.ending){
-    timer.ending=true;
-    completeTimer().finally(()=>{
-      timer.ending=false;
-    });
-  }
-}{if(!timer.running)return;const left=Math.ceil((timer.deadline-Date.now())/1000);$('const shown = timer.infinite
-  ? Math.max(0, Number(state.preferences.focus) * 60 - left)
-  : Math.max(0, left);
-
-$('#timeDisplay').textContent = formatTime(shown);if(left<=0&&!timer.ending){timer.ending=true;completeTimer().finally(()=>{timer.ending=false;});}}
+function tickTimer(){if(!timer.running)return;const left=Math.ceil((timer.deadline-Date.now())/1000);$('timeDisplay').textContent=formatTime(Math.max(0,left));if(left<=0&&!timer.ending){timer.ending=true;completeTimer().finally(()=>{timer.ending=false;});}}
 async function completeTimer(){const original=timer.phase;stopLocalClock();timer.remaining=0;let syncNotice='',canContinueInfinite=true;
  if(original==='focus'){
   if(preview){accountLocalFocus();demo.runs.push({completed:true,ended_at:new Date().toISOString()});saveDemo();}
