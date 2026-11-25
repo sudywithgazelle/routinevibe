@@ -66,8 +66,17 @@ async function signIn(event){event.preventDefault();const submit=$('authSubmit')
   const username=$('signupUsername').value.trim().toLowerCase(),email=$('signupEmail').value.trim().toLowerCase(),password=$('password').value;
   if(!/^[a-z0-9_]{3,24}$/.test(username))throw Error('Username: 3–24 lowercase letters, numbers or underscores.');
   if(password.length<8)throw Error('Choose at least 8 password characters.');
+  // Check username availability before creating the Auth user.
+  const {data:usernameAvailable,error:availabilityError}=await db.rpc('is_username_available',{p_username:username});
+  if(availabilityError)throw Error('We could not verify this username right now. Please try again.');
+  if(usernameAvailable!==true)throw Error('This username is already taken. Please choose a different username.');
   const {data,error}=await db.auth.signUp({email,password,options:{data:{username,display_name:username,avatar:signupAvatar}}});
-  if(error)throw error;
+  if(error){
+   // Handle a race: another signup may claim the username after the availability check.
+   const {data:stillAvailable}=await db.rpc('is_username_available',{p_username:username});
+   if(stillAvailable===false)throw Error('This username is already taken. Please choose a different username.');
+   throw error;
+  }
   if(!data.session){setAuthError('Account created. Check your email to verify your address, then log in.');setAuthView('login');setAuthError('Check your email for a verification link, then log in.');}
   else {session=data.session;await enterApp();}
  }else{
