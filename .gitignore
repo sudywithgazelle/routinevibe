@@ -1,0 +1,9 @@
+.env
+.env.*
+!.env.example
+node_modules/
+.DS_Store
+__pycache__/
+_site/
+*.log
+# NEVER store server-side Supabase service-role keys or access tokens here.

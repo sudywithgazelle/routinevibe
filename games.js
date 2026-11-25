@@ -9,7 +9,7 @@ function rand(seed){let a=(seed||1)>>>0;return()=>{a^=a<<13;a^=a>>>17;a^=a<<5;re
 function shuffle(arr,r){for(let i=arr.length-1;i>0;i--){const j=Math.floor(r()*(i+1));[arr[i],arr[j]]=[arr[j],arr[i]];}return arr;}
 function open(kind,seed,onFinish){cleanupFns();seq++;const mySeq=seq;game=kind;gameStart=performance.now();$('gameMessage').textContent='';$('gameBody').replaceChildren();
  const win=()=>{if(mySeq!==seq)return;onFinish(Math.max(1,(performance.now()-gameStart)/1000));};
- const r=rand(seed);if(kind==='memory')memory(r,win,mySeq);if(kind==='sudoku')sudoku(r,win,mySeq);if(kind==='crossword')crossword(r,win,mySeq);if(kind==='jigsaw')jigsaw(r,win,mySeq);
+ const r=rand(seed);try{if(kind==='memory')memory(r,win,mySeq);else if(kind==='sudoku')sudoku(r,win,mySeq);else if(kind==='crossword')crossword(r,win,mySeq);else if(kind==='jigsaw')jigsaw(r,win,mySeq);else throw new Error('Unknown game');}catch(error){console.error('Game failed to initialize:',error);$('gameBody').replaceChildren(elt('p','game-error','This game could not start. Close it and try again.'));setInfo('Game setup error. Your study data is safe.');}
 }
 function close(){seq++;cleanupFns();game='';}
 const buttons=(box,items)=>{const row=elt('div','game-controls');items.forEach(([title,fn,cls])=>{const b=elt('button',cls||'',title);b.type='button';b.onclick=fn;row.append(b);});box.append(row);return row;};
