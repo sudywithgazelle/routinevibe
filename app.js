@@ -254,7 +254,24 @@ async function pauseTimer(){if(!timer.running)return;timer.remaining=Math.max(0,
  }catch(e){toast('Could not sync focus time: '+e.message);}}
 }renderTimer();}
 async function resetTimer(){if(timer.busy)return;timer.busy=true;try{await stopCurrentRun();timer.remaining=Number(state.preferences[timer.phase==='focus'?'focus':timer.phase==='short'?'short':'long'])*60;toast('Timer reset ♡');}catch(e){toast('Could not reset timer: '+e.message);}finally{timer.busy=false;renderTimer();await loadInsights();}}
-function tickTimer(){if(!timer.running)return;const left=Math.ceil((timer.deadline-Date.now())/1000);$('const shown = timer.infinite
+function tickTimer(){
+  if(!timer.running)return;
+
+  const left=Math.ceil((timer.deadline-Date.now())/1000);
+
+  const shown=timer.infinite
+    ? Math.max(0,Number(state.preferences.focus)*60-left)
+    : Math.max(0,left);
+
+  $('timeDisplay').textContent=formatTime(shown);
+
+  if(left<=0&&!timer.ending){
+    timer.ending=true;
+    completeTimer().finally(()=>{
+      timer.ending=false;
+    });
+  }
+}{if(!timer.running)return;const left=Math.ceil((timer.deadline-Date.now())/1000);$('const shown = timer.infinite
   ? Math.max(0, Number(state.preferences.focus) * 60 - left)
   : Math.max(0, left);
 
