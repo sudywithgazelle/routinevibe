@@ -46,7 +46,26 @@ const BADGES=[
  {id:'rounds100',label:'Focus Master',desc:'Complete 100 focus rounds',asset:'achievements/rounds-100.svg',goal:100,type:'rounds'},
  {id:'subject5',label:'Curious Mind',desc:'Study five different subjects',asset:'achievements/subject-5.svg',goal:5,type:'subjects'}
 ];
-const state={profile:null,preferences:{...DEFAULT_PREFS},tasks:[],links:[],insights:{},snapshot:null,leaderboard:[],period:'day',analyticsPeriod:'week',analytics:null,studyRecords:[],roomJoined:false,activeGame:null,room:null,gameSeed:null};
+const ACHIEVEMENTS=[
+ {id:'first_spark',label:'First Spark',desc:'Your first real study milestone.',condition:'Complete your first recorded study session with at least 25 minutes of active study time.',asset:'achievements/first-spark.png',goal:1,repeatable:false},
+ {id:'pomodoro_architect',label:'Pomodoro Architect',desc:'Build a complete Pomodoro cycle.',condition:'Complete every focus round in one Pomodoro cycle and finish the final long break.',asset:'achievements/pomodoro-architect.png',goal:1,repeatable:true},
+ {id:'infinite_flow',label:'Infinite Flow',desc:'Stay focused beyond the usual timer cycle.',condition:'Accumulate at least 60 minutes of active study in a single Infinite Focus run.',asset:'achievements/infinite-flow.png',goal:60,unit:'minutes',repeatable:true},
+ {id:'solo_scholar',label:'Solo Scholar',desc:'Make steady progress on your own.',condition:'Complete 10 Solo study sessions, each with at least 25 minutes of active study.',asset:'achievements/solo-scholar.png',goal:10,unit:'sessions',repeatable:true},
+ {id:'together_spirit',label:'Together Spirit',desc:'Show up for shared study time.',condition:'Complete 10 Study Together sessions, each with at least 25 minutes of active study.',asset:'achievements/together-spirit.png',goal:10,unit:'sessions',repeatable:true},
+ {id:'room_explorer',label:'Room Explorer',desc:'Explore different shared study rooms.',condition:'Study for at least 25 active minutes in each of 3 different Study Together rooms.',asset:'achievements/room-explorer.png',goal:3,unit:'rooms',repeatable:true},
+ {id:'study_companion',label:'Study Companion',desc:'Make focused time feel shared.',condition:'Study alongside at least 2 different users for a combined 60 minutes of verified simultaneous study.',asset:'achievements/study-companion.png',goal:60,unit:'minutes',repeatable:true},
+ {id:'early_bird',label:'Early Bird',desc:'Start the day with a focused session.',condition:'Complete 5 study sessions that start between 5:00 AM and 8:00 AM; each session must include at least 25 active minutes.',asset:'achievements/early-bird.png',goal:5,unit:'sessions',repeatable:true},
+ {id:'night_owl',label:'Night Owl',desc:'Find your focus after dark.',condition:'Complete 5 study sessions that start between 9:00 PM and 2:00 AM; each session must include at least 25 active minutes.',asset:'achievements/night-owl.png',goal:5,unit:'sessions',repeatable:true},
+ {id:'weekend_scholar',label:'Weekend Scholar',desc:'Use your weekend for meaningful progress.',condition:'Record at least 120 minutes of active study during one Saturday-and-Sunday weekend.',asset:'achievements/weekend-scholar.png',goal:120,unit:'minutes',repeatable:true},
+ {id:'subject_explorer',label:'Subject Explorer',desc:'Give different subjects a fair chance.',condition:'Study 5 different named subjects for at least 30 active minutes each.',asset:'achievements/subject-explorer.png',goal:5,unit:'subjects',repeatable:true},
+ {id:'subject_specialist',label:'Subject Specialist',desc:'Build deep knowledge in one subject.',condition:'Reach 10 hours of recorded active study in a single subject.',asset:'achievements/subject-specialist.png',goal:10,unit:'hours',repeatable:true},
+ {id:'balanced_mind',label:'Balanced Mind',desc:'Keep your learning broad and balanced.',condition:'On one day, study 3 different subjects for at least 25 active minutes each.',asset:'achievements/balanced-mind.png',goal:3,unit:'subjects',repeatable:true},
+ {id:'task_finisher',label:'Task Finisher',desc:'Turn your intentions into completed work.',condition:'Complete 10 To-Do units. Each completed repetition counts as one unit.',asset:'achievements/task-finisher.png',goal:10,unit:'units',repeatable:true},
+ {id:'weekly_champion',label:'Weekly Champion',desc:'Take the top spot in a weekly competition.',condition:'Finish in 1st place in one complete shared 7-day leaderboard period. Each later weekly win increases the count on this same medal.',asset:'achievements/weekly-champion.png',goal:1,unit:'weekly wins',repeatable:true},
+ {id:'three_peat_champion',label:'Three-Peat Champion',desc:'Hold the top spot for three weeks in a row.',condition:'Finish in 1st place in 3 consecutive shared 7-day leaderboard periods (21 consecutive days). A broken winning streak starts a new run.',asset:'achievements/three-peat-champion.png',goal:3,unit:'consecutive weeks',repeatable:true},
+ {id:'monthly_legend',label:'Monthly Legend',desc:'Lead the leaderboard for a full monthly competition.',condition:'Finish in 1st place after one complete shared 30-day leaderboard period. Each later monthly win increases the count on this same medal.',asset:'achievements/monthly-legend.png',goal:1,unit:'monthly wins',repeatable:true}
+];
+const state={profile:null,preferences:{...DEFAULT_PREFS},tasks:[],links:[],insights:{},achievementData:null,snapshot:null,leaderboard:[],period:'day',analyticsPeriod:'week',analytics:null,studyRecords:[],roomJoined:false,activeGame:null,room:null,gameSeed:null};
 const timer={phase:'focus',studyMode:'solo',remaining:DEFAULT_PREFS.focus*60,deadline:0,running:false,busy:false,serverRunOpen:false,completedFocus:0,ticker:null,pulser:null,localLast:0,ending:false,infinite:false,subject:''};
 let polling=null,pingBusy=false,toastTimeout=null,pulseCount=0,pollCount=0;
 const pad=n=>String(Math.max(0,Math.floor(n))).padStart(2,'0');
@@ -139,7 +158,7 @@ async function init(){
  $('taskForm').onsubmit=submitTask;$('shelfForm').onsubmit=addShelf;
  $('refreshLeaderboard').onclick=()=>loadLeaderboard(true);
  document.querySelectorAll('[data-period]').forEach(b=>b.onclick=()=>{state.period=b.dataset.period;document.querySelectorAll('[data-period]').forEach(x=>x.classList.toggle('active',x.dataset.period===state.period));loadLeaderboard();});
- $('roomToggle').onclick=()=>adminAction(state.snapshot?.room_open?'room_close':'room_open');
+ $('roomToggle').onclick=()=>adminAction('room_close');$('createTogetherRoom').onclick=createTogetherRoom;
  $('breakToggle').onclick=()=>adminAction(state.snapshot?.break_active?'break_off':'break_on');
  $('grantPremium').onclick=()=>adminAction('set_premium',$('adminUsername').value.trim());
  $('revokePremium').onclick=()=>adminAction('set_free',$('adminUsername').value.trim());
@@ -202,20 +221,23 @@ function renderTimer(){const n=timer.running?Math.max(0,Math.ceil((timer.deadlin
  $('xpNote').textContent=(timer.studyMode==='together'?'Together earns 20 XP/hour':'Solo earns 10 XP/hour')+' · only actual active focus time counts';
  document.querySelectorAll('[data-study-mode]').forEach(b=>b.classList.toggle('active',b.dataset.studyMode===timer.studyMode));
  $('currentStudyCount').textContent=state.snapshot?.[timer.studyMode]??(preview?'—':'0');$('currentStudyLabel').textContent=timer.studyMode==='solo'?'Studying in Solo':'Studying Together';
- $('togetherInfo').hidden=timer.studyMode!=='together';$('joinRoom').textContent=state.roomJoined?'Joined ✓':'Join room';$('joinRoom').disabled=!(state.snapshot?.room_open)&&!preview;
- $('togetherStatus').textContent=state.snapshot?.room_open?'Host room is open ♡':'Waiting for host to open the room';
+ $('togetherInfo').hidden=timer.studyMode!=='together';$('joinRoom').textContent=state.roomJoined?'Joined ✓':'Join room';$('joinRoom').disabled=!(state.snapshot?.room_open)||preview;
+ const roomStart=state.snapshot?.room_starts_at?new Date(state.snapshot.room_starts_at):null;
+ const roomEnd=state.snapshot?.room_ends_at?new Date(state.snapshot.room_ends_at):null;
+ $('togetherStatus').textContent=state.roomJoined?'You are in the shared study room ♡':state.snapshot?.room_open?'Room is active · enter the administrator code ♡':roomStart&&roomStart>Date.now()&&roomEnd&&roomEnd>Date.now()?'Room opens '+roomStart.toLocaleString():'No active study room right now';
  $('infiniteToggle').classList.toggle('active',timer.infinite);$('infiniteToggle').setAttribute('aria-pressed',String(timer.infinite));$('infiniteToggle').disabled=timer.running;
  $('subjectInput').value=timer.subject;$('subjectInput').disabled=timer.running||timer.serverRunOpen;
 }
-async function setStudyMode(next){if(!['solo','together'].includes(next))return;if(next==='together'){if(!premium()){toast('Study Together is a Premium feature.');return;}if(!state.snapshot?.room_open){toast('The host has not opened a study room yet.');return;}}
+async function setStudyMode(next){if(!['solo','together'].includes(next))return;if(next==='together'&&!state.snapshot?.room_open){toast('There is no active Study Together room right now.');return;}
  if(timer.studyMode===next)return;try{await stopCurrentRun();timer.studyMode=next;timer.remaining=Number(state.preferences.focus)*60;timer.phase='focus';state.roomJoined=next==='solo';renderTimer();}catch(e){toast('Could not switch study mode: '+e.message);}}
-async function joinTogether(){if(!premium()||!state.snapshot?.room_open){toast('The room needs Premium access and an active host.');return;}state.roomJoined=true;renderTimer();toast('Joined the host study room ♡');}
+async function joinTogether(){if(!state.snapshot?.room_open){toast('There is no active Study Together room right now.');return;}const code=$('togetherCode').value.trim().toUpperCase();if(!/^[A-Z0-9]{4,12}$/.test(code)){toast('Enter the 4–12 character room code from the administrator.');$('togetherCode').focus();return;}try{await rpc('join_study_together_room',{p_code:code});state.roomJoined=true;$('togetherCode').value='';renderTimer();toast('You joined the Study Together room ♡');}catch(e){state.roomJoined=false;renderTimer();toast(e.message||'Could not join this study room.');}}
+async function createTogetherRoom(){if(!state.profile?.is_admin)return;const code=$('adminRoomCode').value.trim().toUpperCase(),startRaw=$('adminRoomStart').value,endRaw=$('adminRoomEnd').value;if(!/^[A-Z0-9]{4,12}$/.test(code)){ $('adminStatus').textContent='Enter a room code with 4–12 letters or numbers.';return;}if(!startRaw||!endRaw){$('adminStatus').textContent='Choose both the start and end date/time.';return;}const starts=new Date(startRaw),ends=new Date(endRaw);if(!Number.isFinite(starts.getTime())||!Number.isFinite(ends.getTime())||ends<=starts||ends<=new Date()){$('adminStatus').textContent='The end time must be after the start time and in the future.';return;}try{const room=await rpc('admin_set_study_together_room',{p_code:code,p_starts_at:starts.toISOString(),p_ends_at:ends.toISOString()});$('adminStatus').textContent='Study Together room scheduled. Share the code with participants.';state.roomJoined=false;$('adminRoomCode').value='';await refreshSnapshot();toast('Study Together room saved ♡');}catch(e){$('adminStatus').textContent=e.message||'Could not create the room.';}}
 function stopLocalClock(){timer.running=false;if(timer.ticker)clearInterval(timer.ticker);if(timer.pulser)clearInterval(timer.pulser);timer.ticker=timer.pulser=null;}
 async function stopCurrentRun(){if(timer.running)await pauseTimer();if(timer.serverRunOpen&&!preview){await rpc('tick_study',{p_action:'stop'});timer.serverRunOpen=false;}timer.running=false;timer.remaining=Number(state.preferences.focus)*60;}
 async function switchPhase(phase){try{if(timer.running)await pauseTimer();if(timer.phase==='focus'&&phase!=='focus'&&timer.serverRunOpen){await stopCurrentRun();}timer.phase=phase;if(phase!=='focus')timer.infinite=false;timer.remaining=Number(state.preferences[phase==='focus'?'focus':phase==='short'?'short':'long'])*60;renderTimer();}catch(e){toast('Could not switch timer mode: '+e.message);}}
 async function toggleTimer(){if(timer.busy||timer.ending)return;timer.busy=true;try{if(timer.running)await pauseTimer();else await startTimer();}catch(e){toast(e.message||'Timer error');}finally{timer.busy=false;renderTimer();}}
 async function startTimer(){if(timer.phase==='focus'){
- if(timer.studyMode==='together'&&(!premium()||!state.snapshot?.room_open||!state.roomJoined)){throw Error('Join an open Premium host room first.');}
+ if(timer.studyMode==='together'&&(!state.snapshot?.room_open||!state.roomJoined)){throw Error('Enter the active room code before starting Study Together.');}
  if(!preview){
   if(!timer.serverRunOpen){
    const started=await rpc('start_study_with_subject',{p_mode:timer.studyMode,p_target_seconds:Math.max(60,Math.round(timer.remaining)),p_subject:timer.subject||null});
@@ -285,6 +307,7 @@ async function pulseFocus(){if(!timer.running||timer.phase!=='focus'||pingBusy)r
  else{
   const res=await rpc('tick_study',{p_action:'pulse'});
   if(res?.status==='room_closed'||res?.status==='missing'){
+   if(res?.status==='room_closed')applyPulseToInsights(res);
    timer.remaining=Math.max(0,Math.ceil((timer.deadline-Date.now())/1000));stopLocalClock();timer.serverRunOpen=false;
    if(timer.studyMode==='together'){timer.studyMode='solo';state.roomJoined=false;}
    toast(res.status==='room_closed'?'The host closed the room. Study Together has ended.':'The server study session has ended.');renderTimer();
@@ -308,7 +331,7 @@ async function refreshSnapshot(){if(preview){state.snapshot={registered:'—',on
  $('registeredCount').textContent=state.snapshot.registered;$('onlineCount').textContent=state.snapshot.online;
  if(preview)$('previewBreakToggle').textContent=demo.previewBreak?'Lock games again':'Try all games';
  if(!state.snapshot.room_open&&timer.studyMode==='together'&&!timer.running){state.roomJoined=false;timer.studyMode='solo';}
- $('roomToggle').textContent=state.snapshot.room_open?'Close Together room':'Open Together room';$('breakToggle').textContent=state.snapshot.break_active?'Disable Break Mode':'Enable Break Mode';
+ $('roomToggle').textContent='Close / cancel room';$('breakToggle').textContent=state.snapshot.break_active?'Disable Break Mode':'Enable Break Mode';
  $('breakBanner').textContent=state.snapshot.break_active?(preview?'☕ Local showcase: all four games are temporarily unlocked.':'☕ Host Break Mode is on — study XP requirements are waived!'):'Games unlock through accumulated study XP. Requirements are provisional.';
  renderTimer();renderGameCards();}
 async function loadTasks(){if(preview){state.tasks=demo.tasks||[];}else{const {data,error}=await db.from('todos').select('*').order('created_at',{ascending:false});if(error)throw error;state.tasks=data||[];}renderTasks();}
@@ -364,7 +387,18 @@ function renderAnalytics(){const a=state.analytics;if(!a)return;const donut=$('s
 function avatarUnlock(i){const xp=Number(state.insights.total_xp||0);if(i===4||i===8)return premium()&&xp>=300;return xp>=(i===1||i===5?0:i===2||i===6?20:100);}
 function renderAvatars(){const box=$('avatarGrid');box.replaceChildren();for(let i=1;i<=8;i++){const unlocked=avatarUnlock(i);const b=$node('button','avatar-choice'+(unlocked?'':' locked')+(state.profile.avatar===i?' selected':''));const img=$node('img');img.src=asset('avatar'+i+'.webp');img.alt='Portrait stage '+i;b.append(img,$node('small','',i===4||i===8?'Graduate ✦':'Stage '+((i-1)%4+1)));if(!unlocked)b.append($node('span','lock','🔒'));b.title=unlocked?'Select portrait':i===4||i===8?'Premium graduation avatar':'Study more to unlock';b.onclick=()=>chooseAvatar(i);box.append(b);}}
 async function chooseAvatar(i){if(!avatarUnlock(i)){toast(i===4||i===8?'Graduation portrait needs Premium and 300 study XP':'Study more to unlock this portrait');return;}try{if(!preview)await rpc('change_my_avatar',{p_avatar:i});state.profile.avatar=i;if(preview){demo.profile.avatar=i;saveDemo();}renderProfile();await loadLeaderboard();toast('New portrait selected ♡');}catch(e){toast(e.message);}}
-function renderBadges(){const box=$('achievementGrid');box.replaceChildren();const unlocked=availableBadges(),selected=new Set(state.profile.selected_badges||[]);BADGES.forEach(badge=>{const earned=unlocked.has(badge.id);const b=$node('button','achievement'+(earned?'':' locked')+(selected.has(badge.id)?' selected':''));const img=$node('img');img.src=asset(badge.asset);img.alt='Badge';b.append(img,$node('strong','',badge.label),$node('small','',earned?(selected.has(badge.id)?'On profile ✓':'Earned · tap to display'):badge.desc));b.title=earned?'Toggle public badge':'Not earned yet';b.onclick=()=>toggleBadge(badge.id);box.append(b);});}
+function renderBadges(){
+ const box=$('achievementGrid');
+ if(!window.GazelleAchievements){box.textContent='Achievements could not be loaded.';return;}
+ const records=Array.isArray(state.achievementData)?state.achievementData:[];
+ const byId=new Map(records.map(item=>[item.achievement_id||item.id,item]));
+ const items=ACHIEVEMENTS.map(def=>{
+  const record=byId.get(def.id)||{};
+  return {...def,src:asset(def.asset),count:Number(record.earned_count||0),earned:Number(record.earned_count||0)>0,
+   progress:record.progress===undefined?null:record.progress,progressText:record.progress_text||''};
+ });
+ window.GazelleAchievements.render(box,items,{dataReady:Array.isArray(state.achievementData)});
+}
 async function toggleBadge(id){if(!availableBadges().has(id)){toast('Earn this badge first ♡');return;}const prev=state.profile.selected_badges||[],selection=new Set(prev);if(selection.has(id))selection.delete(id);else {if(selection.size>=3){toast('Choose at most three public badges.');return;}selection.add(id);}const a=[...selection];try{if(!preview)await rpc('set_my_badges',{p_badges:a});state.profile.selected_badges=a;if(preview){demo.profile.selected_badges=a;saveDemo();}renderBadges();await loadLeaderboard();}catch(e){toast(e.message);}}
 function gameAllowed(g){const conf=(state.snapshot?.catalog||[]).find(x=>x.game===g.id);if(!conf)return false;if(conf.premium_only&&!premium())return false;return !!state.snapshot?.break_active||Number(state.insights.total_xp||0)>=Number(conf.xp_required||0);}
 function renderGameCards(){const root=$('gameCards');root.replaceChildren();GAMES.forEach(game=>{const conf=(state.snapshot?.catalog||[]).find(x=>x.game===game.id)||{xp_required:0,premium_only:false,players:0};const available=!!state.profile&&gameAllowed(game);
